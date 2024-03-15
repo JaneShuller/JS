@@ -1,0 +1,107 @@
+console.clear();
+
+import * as THREE from "three";
+import Threeasy from "threeasy";
+
+const app = new Threeasy(THREE, {
+	domElement: document.querySelector(".canvasEl")
+});
+const geo = new THREE.BoxGeometry(2.3,2.3);
+
+
+let varying = `precision highp float;
+varying vec2 vPos;
+uniform float time;`;
+const mat = new THREE.ShaderMaterial({ 
+	uniforms: {
+		time: {
+			value: app.clock.getElapsedTime()
+		}
+	},
+	vertexShader: `
+		${varying}
+		
+		void main() {
+			vPos = position.xy;
+			gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+		}
+	`,
+	fragmentShader: `
+		${varying}
+
+		#define NUM_OCTAVES 5
+
+		float rand(vec2 n) { 
+			return fract(sin(dot(n, vec2(12.9898, 4.1414))) * 43758.5453);
+		}
+
+		float noise(vec2 p){
+			vec2 ip = floor(p);
+			vec2 u = fract(p);
+			u = u*u*(3.0-2.0*u);
+
+			float res = mix(
+				mix(rand(ip),rand(ip+vec2(1.0,0.0)),u.x),
+				mix(rand(ip+vec2(0.0,1.0)),rand(ip+vec2(1.0,1.0)),u.x),u.y);
+			return res*res;
+		}
+
+		float fbm(vec2 x) {
+			float v = 0.0;
+			float a = 0.5;
+			vec2 shift = vec2(100);
+			// Rotate to reduce axial bias
+				mat2 rot = mat2(cos(0.5), sin(0.5), -sin(0.5), cos(0.50));
+			for (int i = 0; i < NUM_OCTAVES; ++i) {
+				v += a * noise(x);
+				x = rot * x * 2.0 + shift;
+				a *= 0.5;
+			}
+			return v;
+		}
+
+		float flames (vec2 uv) {
+			float layer = fbm(vec2(
+				fbm(vec2(uv.x * 1.25, uv.y - time * .125)),
+				fbm(vec2(uv.x * 2.5, uv.y - time))
+			));
+			return layer;
+		}
+		vec3 rgb ( float r, float g, float b ) {
+			return vec3(r,g,b) / 255.;
+		}
+		float getFlameLevel (float threshold, vec2 uv) {
+			float col = flames(vec2(uv.x, uv.y - time));
+			col *= 1. - (uv.y * threshold);
+
+			return col;
+		}
+		void main() {
+			vec2 uv = vPos;
+			vec3 bg = rgb(120., 1., 22.);
+			vec3 flame = rgb(247., 181., 56.);
+
+			vec3 color = bg;
+
+			float c1 = getFlameLevel(.1, uv);
+			color += flame * vec3(c1);
+
+			float c2 = getFlameLevel(.15, uv);
+			color += flame * vec3(c2);
+
+			float c3 = getFlameLevel(.2, uv);
+			color += flame * vec3(c3);
+
+			float c4 = getFlameLevel(.25, uv);
+			color += flame * vec3(c3);
+
+			gl_FragColor = vec4(vec3(color), 1.0);
+		}
+	`
+});
+app.animator.add(()=>{
+	mat.uniforms.time.value = app.clock.getElapsedTime();
+})
+const mesh = new THREE.Mesh(geo, mat);
+
+app.scene.add(mesh);
